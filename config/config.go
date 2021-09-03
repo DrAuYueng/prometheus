@@ -449,10 +449,8 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	// Check for users putting URLs in target groups.
-	if len(c.RelabelConfigs) == 0 {
-		if err := checkStaticTargets(c.ServiceDiscoveryConfigs); err != nil {
-			return err
-		}
+	if err := checkStaticTargets(c.ServiceDiscoveryConfigs, c.RelabelConfigs...); err != nil {
+		return err
 	}
 
 	for _, rlcfg := range c.RelabelConfigs {
@@ -606,10 +604,8 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	}
 
 	// Check for users putting URLs in target groups.
-	if len(c.RelabelConfigs) == 0 {
-		if err := checkStaticTargets(c.ServiceDiscoveryConfigs); err != nil {
-			return err
-		}
+	if err := checkStaticTargets(c.ServiceDiscoveryConfigs, c.RelabelConfigs...); err != nil {
+		return err
 	}
 
 	for _, rlcfg := range c.RelabelConfigs {
@@ -626,7 +622,7 @@ func (c *AlertmanagerConfig) MarshalYAML() (interface{}, error) {
 	return discovery.MarshalYAMLWithInlineConfigs(c)
 }
 
-func checkStaticTargets(configs discovery.Configs) error {
+func checkStaticTargets(configs discovery.Configs, relabelConfigs ...*relabel.Config) error {
 	for _, cfg := range configs {
 		sc, ok := cfg.(discovery.StaticConfig)
 		if !ok {
@@ -634,7 +630,33 @@ func checkStaticTargets(configs discovery.Configs) error {
 		}
 		for _, tg := range sc {
 			for _, t := range tg.Targets {
-				if err := CheckTargetAddress(t[model.AddressLabel]); err != nil {
+				address := t[model.AddressLabel]
+				if len(relabelConfigs) > 0 {
+					lbls := make([]labels.Label, 0, len(t))
+
+					for ln, lv := range t {
+						lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
+					}
+
+					if lv, ok := tg.Labels[model.AddressLabel]; ok {
+						if _, ok := t[model.AddressLabel]; !ok {
+							// merge from Labels
+							lbls = append(lbls, labels.Label{Name: model.AddressLabel, Value: string(lv)})
+						}
+					}
+
+					filteredLabels := labels.New(lbls...)
+					processedLabels := relabel.Process(filteredLabels, relabelConfigs...)
+					if v := processedLabels.Get(model.AddressLabel); v !="" {
+						address = model.LabelValue(v)
+					}
+				}
+
+				if string(address) == "" {
+					return errors.New("no address defined")
+				}
+
+				if err := CheckTargetAddress(address); err != nil {
 					return err
 				}
 			}

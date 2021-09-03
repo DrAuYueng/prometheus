@@ -1306,6 +1306,10 @@ var expectedErrors = []struct {
 		filename: "empty_scrape_config_action.bad.yml",
 		errMsg:   "relabel action cannot be empty",
 	},
+	{
+		filename: "url_in_targetgroup_with_relabel_config.bad.yml",
+		errMsg:   "\"http://bad\" is not a valid hostname",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
@@ -1374,4 +1378,9 @@ func TestEmptyGlobalBlock(t *testing.T) {
 func kubernetesSDHostURL() config.URL {
 	tURL, _ := url.Parse("https://localhost:1234")
 	return config.URL{URL: tURL}
+}
+
+func TestUrlInTargetGroupWithRelabelConfigGood(t *testing.T) {
+	_, err := LoadFile("testdata/url_in_targetgroup_with_relabel_config.good.yml", false, log.NewNopLogger())
+	require.NoError(t, err)
 }
